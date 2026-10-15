@@ -1,0 +1,62 @@
+name: Build PrinceMix for Mac
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'princemix/**']
+    paths:
+      - 'PrinceMix-0.1-Source.zip'
+      - '.github/workflows/build-mac.yml'
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: PrinceMix
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract source project
+        working-directory: .
+        run: unzip -q PrinceMix-0.1-Source.zip
+      - name: Configure universal Apple Silicon and Intel binaries
+        run: >-
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          '-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64'
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+      - name: Build plugin, standalone, and engine tests
+        run: cmake --build build --config Release --parallel 2
+      - name: Run engine tests on macOS
+        run: ctest --test-dir build -C Release --output-on-failure
+      - name: Package and sign local development build
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p distribution/PrinceMix-Mac
+          for entry in VST3/PrinceMix.vst3 AU/PrinceMix.component Standalone/PrinceMix.app; do
+            source="build/PrinceMix_artefacts/Release/$entry"
+            test -d "$source"
+            codesign --force --deep --sign - "$source"
+            codesign --verify --deep --strict "$source"
+            ditto "$source" "distribution/PrinceMix-Mac/$(basename "$source")"
+          done
+          cp scripts/Install-Mac.command distribution/PrinceMix-Mac/
+          cp scripts/INSTALL-README.txt distribution/PrinceMix-Mac/README.txt
+          cp LICENSE distribution/PrinceMix-Mac/
+          chmod +x distribution/PrinceMix-Mac/Install-Mac.command
+      - name: Validate Audio Unit
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
+          ditto distribution/PrinceMix-Mac/PrinceMix.component "$HOME/Library/Audio/Plug-Ins/Components/PrinceMix.component"
+          auval -v aufx Prmx Prct
+      - name: Zip preserving Mac bundle structure
+        run: ditto -c -k --sequesterRsrc --keepParent distribution/PrinceMix-Mac distribution/PrinceMix-Mac.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PrinceMix-Mac
+          path: PrinceMix/distribution/PrinceMix-Mac.zip
+          if-no-files-found: error
+          retention-days: 14
