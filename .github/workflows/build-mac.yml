@@ -51,6 +51,10 @@ jobs:
           set -euo pipefail
           mkdir -p "$HOME/Library/Audio/Plug-Ins/Components"
           ditto distribution/PrinceMix-Mac/PrinceMix.component "$HOME/Library/Audio/Plug-Ins/Components/PrinceMix.component"
+          /usr/libexec/PlistBuddy -c 'Print AudioComponents' distribution/PrinceMix-Mac/PrinceMix.component/Contents/Info.plist
+          killall AudioComponentRegistrar || true
+          sleep 3
+          auval -a
           auval -v aufx Prmx Prct
       - name: Zip preserving Mac bundle structure
         run: ditto -c -k --sequesterRsrc --keepParent distribution/PrinceMix-Mac distribution/PrinceMix-Mac.zip
